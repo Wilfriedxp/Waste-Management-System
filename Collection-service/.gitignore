@@ -1,0 +1,10 @@
+@"
+#Dependencies
+node_modules/
+
+#Environment Variables
+.env
+
+#IDE
+.vscode/
+"@ | Out-File .gitignore -Encoding UTF8
