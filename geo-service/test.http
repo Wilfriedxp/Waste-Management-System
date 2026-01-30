@@ -1,0 +1,47 @@
+### VARIABLE DEFINITIONS
+@baseUrl = http://localhost:8002/api
+@siteId = 1
+@ruleId = 1
+
+### 1. GET ALL SITES (Spatial Proof)
+# Explain: "This fetches all deposition sites with PostGIS geometry data."
+GET {{baseUrl}}/sites
+Accept: application/json
+
+### 2. SEARCH FOR A SPECIFIC SITE
+# Explain: "Demonstrating the search filter for Akwa district."
+GET {{baseUrl}}/sites?search=Akwa
+Accept: application/json
+
+### 3. GET PRICING RULES
+# Explain: "Fetching the current tariff models (Standard, Heavy, etc.)"
+GET {{baseUrl}}/tariffs/rules
+Accept: application/json
+
+### 4. CALCULATE DYNAMIC TARIFF (The "Wow" Factor)
+# Explain: "Calculating price based on 50kg of waste and my current GPS in Douala."
+POST {{baseUrl}}/tariffs/calculate
+Content-Type: application/json
+
+{
+    "userLat": 4.0511,
+    "userLng": 9.7679,
+    "siteId": {{siteId}},
+    "weight": 50,
+    "ruleId": {{ruleId}}
+}
+
+### 5. UPDATE TARIFF RULE (Admin Control)
+# Explain: "Increasing the cost per KM to 250 FCFA. Watch how the calculation changes!"
+PUT {{baseUrl}}/tariffs/rules/1
+Content-Type: application/json
+
+{
+    "name": "Standard Truck - New Rate",
+    "base_fee_xaf": 600,
+    "cost_per_km": 250
+}
+
+### 6. DELETE A SITE (LT03 Management)
+# Explain: "Removing a site from the system."
+DELETE {{baseUrl}}/sites/{{siteId}}

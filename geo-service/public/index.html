@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Douala Waste & Tariff System</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; margin: 0; display: flex; height: 100vh; overflow: hidden; }
+        
+        /* SIDEBAR STYLES */
+        #sidebar { width: 350px; background: #f8f9fa; display: flex; flex-direction: column; box-shadow: 2px 0 10px rgba(0,0,0,0.1); z-index: 2000; }
+        .p-20 { padding: 20px; }
+        .scroll { flex-grow: 1; overflow-y: auto; padding: 0 20px; }
+        
+        /* SEARCH BAR */
+        .search-box { display: flex; margin-bottom: 15px; }
+        .search-box input { flex: 1; padding: 10px; border: 1px solid #ccc; border-radius: 4px 0 0 4px; outline: none; }
+        .search-box button { padding: 10px 15px; background: #166534; color: white; border: none; border-radius: 0 4px 4px 0; cursor: pointer; }
+        
+        /* LIST ITEMS */
+        .site-item { background: white; padding: 15px; margin-bottom: 10px; border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); cursor: pointer; transition: 0.2s; border-left: 4px solid transparent; }
+        .site-item:hover { transform: translateX(5px); border-left-color: #166534; }
+        
+        /* CALCULATOR PANEL (Hidden by default) */
+        #calc-panel { background: #e0f2f1; padding: 20px; border-top: 1px solid #b2dfdb; display: none; }
+        .price-tag { font-size: 1.5rem; color: #166534; font-weight: bold; text-align: center; margin-top: 10px; }
+        
+        #map { flex-grow: 1; height: 100%; }
+        input[type="number"] { width: 100%; padding: 8px; box-sizing: border-box; margin: 5px 0; }
+    </style>
+</head>
+<body>
+
+    <div id="sidebar">
+        <div class="p-20" style="background: #166534; color: white;">
+            <h2 style="margin:0">Waste Management</h2>
+            <small>Douala City</small>
+        </div>
+
+        <div class="p-20">
+            <div class="search-box">
+                <input type="text" id="search-input" placeholder="Search site (e.g., Akwa)...">
+                <button onclick="handleSearch()">Search</button>
+            </div>
+        </div>
+
+        <div id="site-list" class="scroll">
+            Loading sites...
+        </div>
+
+        <div id="calc-panel">
+            <h3 style="margin-top:0">Calculate Tariff</h3>
+            <p id="selected-site-name" style="color: #555; font-size: 0.9rem;">Select a site above</p>
+            
+            <label>Weight of Waste (kg):</label>
+            <input type="number" id="waste-weight" placeholder="Ex: 50" value="10">
+            
+            <button onclick="calculateCost()" style="width:100%; background:#166534; color:white; padding:10px; border:none; margin-top:10px; cursor:pointer;">
+                Get Price Estimate
+            </button>
+            
+            <div id="result-display" style="margin-top:10px;"></div>
+        </div>
+    </div>
+
+    <div id="map"></div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+        const API = "http://localhost:8002/api";
+        let allSites = [];
+        let selectedSiteId = null;
+        let userLocation = { lat: 4.0511, lng: 9.7679 }; // Default Douala
+
+        // 1. Initialize Map
+        const map = L.map('map').setView([4.0511, 9.7679], 13);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+
+        // 2. Try to get Real GPS Location
+        if (navigator.geolocation) {
+            navigator.geolocation.getCurrentPosition(pos => {
+                userLocation = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+                
+                // Add "Me" Marker
+                L.marker([userLocation.lat, userLocation.lng])
+                 .addTo(map)
+                 .bindPopup("<b>My Location</b>").openPopup();
+                 
+                // Recenter map
+                map.setView([userLocation.lat, userLocation.lng], 13);
+            });
+        }
+
+        // 3. Fetch Sites (Search capable)
+        async function fetchSites(query = "") {
+            const res = await fetch(`${API}/sites?search=${query}`);
+            allSites = await res.json();
+            renderSites();
+        }
+
+        // 4. Render Markers & List
+        function renderSites() {
+            const listContainer = document.getElementById('site-list');
+            listContainer.innerHTML = "";
+
+            // Clear existing markers (except User marker)
+            map.eachLayer(layer => {
+                if (layer instanceof L.Marker && layer.getPopup()?.getContent() !== "<b>My Location</b>") {
+                    map.removeLayer(layer);
+                }
+            });
+
+            if (allSites.length === 0) {
+                listContainer.innerHTML = "<p>No sites found.</p>";
+                return;
+            }
+
+            allSites.forEach(site => {
+                // Add to Map
+                const marker = L.marker([site.latitude, site.longitude])
+                 .addTo(map)
+                 .bindPopup(`<b>${site.name}</b><br>${site.type}`);
+                
+                // Click Marker -> Select Site
+                marker.on('click', () => selectSite(site));
+
+                // Add to Sidebar List
+                const item = document.createElement('div');
+                item.className = 'site-item';
+                item.innerHTML = `<strong>${site.name}</strong><br><small>${site.type}</small>`;
+                item.onclick = () => {
+                    selectSite(site);
+                    map.setView([site.latitude, site.longitude], 15);
+                    marker.openPopup();
+                };
+                listContainer.appendChild(item);
+            });
+        }
+
+        // 5. Select Logic
+        function selectSite(site) {
+            selectedSiteId = site.id;
+            document.getElementById('calc-panel').style.display = 'block';
+            document.getElementById('selected-site-name').innerText = `Destination: ${site.name}`;
+            document.getElementById('result-display').innerHTML = ""; // Clear previous price
+        }
+
+        // 6. Search Function
+        function handleSearch() {
+            const query = document.getElementById('search-input').value;
+            fetchSites(query);
+        }
+
+        // 7. Calculate Tariff Logic
+        async function calculateCost() {
+            const weight = document.getElementById('waste-weight').value;
+            
+            if (!weight || weight <= 0) {
+                alert("Please enter a valid weight");
+                return;
+            }
+
+            document.getElementById('result-display').innerHTML = "Calculating...";
+
+            try {
+                const res = await fetch(`${API}/tariffs/calculate`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        userLat: userLocation.lat,
+                        userLng: userLocation.lng,
+                        siteId: selectedSiteId,
+                        weight: weight,
+                        ruleId: 1 // Using 'Standard Truck' rule
+                    })
+                });
+
+                const data = await res.json();
+
+                // Display Result in XAF
+                document.getElementById('result-display').innerHTML = `
+                    <div style="margin-top:15px; border-top:1px dashed #ccc; padding-top:10px;">
+                        <div>Distance: <b>${data.distance_km} km</b></div>
+                        <div>Weight: <b>${data.weight_kg} kg</b></div>
+                        <div class="price-tag">${data.total_price_xaf} FCFA</div>
+                        <small style="display:block; text-align:center; color:#666;">
+                            (Base: ${data.details.base_fee} + Trans: ${data.details.transport_cost} + Wgt: ${data.details.weight_cost})
+                        </small>
+                    </div>
+                `;
+
+            } catch (error) {
+                console.error(error);
+                alert("Error calculating price. Ensure database is connected.");
+            }
+        }
+
+        // Initial Load
+        fetchSites();
+    </script>
+</body>
+</html>
